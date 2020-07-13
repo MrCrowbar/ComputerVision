@@ -12,40 +12,30 @@ from selenium.webdriver.common.keys import Keys
 #import urllib2
 from multiprocessing.dummy import Pool as ThreadPool
 
-"""
-Actividad integradora2 Computer Vision
-Se maneja multithreading para agilizar el proceso de los URLS.
-"""
-
-
-resp = ''
-respList = []
-
+#Función para verificar URLs mediante multithreading
 def urlHandler(url):
   global removeCount
   global globalCount
   try:
-      resp = urllib.request.urlopen(url,data=None,timeout=2)
-      respList.append(resp)
+      response = urllib.request.urlopen(url,data=None,timeout=2)
+      responseList.append(response)
   except:
       removeCount += 1
   globalCount += 1
   progress = int(globalCount*100/listSize)
-  print('\rCurrent progress: ',progress,'%. ','Removed items: ',removeCount,end='')
+  print('\rProgreso actual: ',progress,'%. ','Items removidos: ',removeCount,end='')
 
+#Elegir el webdriver para Selenium
 fireFoxOptions = webdriver.FirefoxOptions()
-fireFoxOptions.set_headless()
+fireFoxOptions.headless = True
 driver = webdriver.Firefox(options=fireFoxOptions)
 driver.implicitly_wait(15)
 
 
-#def test_search_in_python_org(self):
 while True:
-    pool = ThreadPool(15)
     #Buscar la palabra ingresada
     userWord = input('Ingresa una palabra a buscar: ')
-    print('Buscando la palabra ', userWord,'...')
-    
+    print('Buscando la palabra ', userWord,' en Image net...')
     driver.get("http://image-net.org/index")
     elem = driver.find_element_by_name("q")
     elem.send_keys(userWord)
@@ -71,59 +61,54 @@ while True:
         synsetoffset = myClick[-1].get_attribute('synsetoffset') #Vamos a la última hoja que es en dónde se encuentra lo que buscamos
         synsetoffset = 'n' + synsetoffset #Creamos el wnind
         downloadLink = 'http://www.image-net.org/api/text/imagenet.synset.geturls?wnid=' + synsetoffset #Nos vamos directo a los URLs
-        folderPathTrain = './trainPARALEL/' + userWord + '/'
-        folderPathTest = './testPARALEL/' + userWord + '/'
+        folderPathTrain = './train/' + userWord + '/'
+        folderPathTest = './test/' + userWord + '/'
         try:
             os.makedirs(folderPathTrain)
-            print('Created folder ',folderPathTrain)
+            print('Carpeta ',folderPathTrain,' creada')
         except FileExistsError:
-            print(folderPathTrain,' already exists')
+            print(folderPathTrain,' ya existe')
 
         try:
             os.makedirs(folderPathTest)
-            print('Created folder ',folderPathTest)
+            print('Carpeta ',folderPathTest,' creada')
         except FileExistsError:
-            print(folderPathTest,' already exists')
+            print(folderPathTest,' ya existe')
 
         #Descargar URLS a archivo de texto
-        print('Descargando URLS a la carpeta ',folderPathTrain, ' y ',folderPathTest)
+        print("Iniciando obtención de imágenes")
         driver.get(downloadLink)
         try:
             content = driver.find_element_by_tag_name('pre').get_attribute('innerText')
         except:
-            print("Error, going to beginning")
+            print("Error, volviendo al inicio")
         else:
             urlList = list(content.split('\n'))
-            urlList.pop()
-            urlList.pop()
-            newList = urlList[:500]
-            listSize = len(newList)
-            print('Original list size: ', str(listSize))
+            listSize = len(urlList)
+            print('Tamaño de lista original: ', str(listSize))
             progress = 0
-            resp = ''
             img = ''
             filePath = ''
             globalCount = 0
-            writeCount = 0
             removeCount = 0
-            respList = []
-            print('Cleaning and verifying URLs')
+            responseList = []
+            print('Descartando y verificando URLs con multithreading')
+            threads = int(input("ENTER NUMBER OF THREADS--TESTING PURPOSE: "))
             start_time = time.time()
-            results = pool.map(urlHandler, newList)
-            print('\nTime taken: ',time.time() - start_time)
+            pool = ThreadPool(threads)
+            pool.map(urlHandler, urlList)
             pool.close()
             pool.join()
-            listSize -= removeCount
-            print(listSize)
+            print("\nEXECUTION TIME--TESTING PURPOSE: ", round(time.time() - start_time,2),' seconds')
 
             #LIMPIAR IMAGENES
-            print('Cleaning images')
+            print('Verificando imágenes')
             globalCount = 0
             removeCount = 0
             imgList = []
-            for resp in respList:
+            for response in responseList:
                 try:
-                    imgByte = np.asarray(bytearray(resp.read()),dtype='uint8')
+                    imgByte = np.asarray(bytearray(response.read()),dtype='uint8')
                     img = cv2.imdecode(imgByte, cv2.IMREAD_COLOR)
                 except:
                     removeCount += 1
@@ -134,46 +119,36 @@ while True:
                     except:
                         removeCount += 1
                     else:
-                        cv2.imshow('Image', img)
-                        cv2.waitKey(1)
                         imgList.append(img)
 
                 globalCount += 1
                 progress = int(globalCount*100/listSize)
-                print('\rCurrent progress: ',progress,'%. ','Removed items: ',removeCount,end='')
-            cv2.destroyAllWindows()
-
+                print('\rProgreso actual: ',progress,'%. ','Items removidos: ',removeCount,end='')
             listSize = len(imgList)
-            print('\nFinal imgSize: ', listSize)
+            print('\nTamaño de lista con elementos válidos: ', listSize)
             
             #GUARDAR IMAGNES
             trainningSize = int(80*listSize/100)
             testingSize = int(20*listSize/100)
-            print('Training size: ',trainningSize, '. Testing size: ',testingSize)
-
+            print('Elementos de entrenamiento: ',trainningSize, '. Elementos de testing: ',testingSize)
             writeCount = 0
             for img in imgList[:testingSize]:
                 filePath = userWord + '_' + str(writeCount) + '.png'
                 cv2.imwrite(folderPathTest+filePath, img)
                 writeCount += 1
-                progress = int(writeCount*100/testingSize)
-                #print('\rCurrent progress: ',progress,'%. ','Written items: ',writeCount,end='')
-            print('Testing written images: ', writeCount)
+            print('Imágenes de testing guardadas en la carpeta ',folderPathTest)
 
             writeCount = 0
             for img in imgList[testingSize:]:
                 filePath = userWord + '_' + str(writeCount) + '.png'
                 cv2.imwrite(folderPathTrain+filePath, img)
                 writeCount += 1
-                progress = int(writeCount*100/trainningSize)
-                #print('\rCurrent progress: ',progress,'%. ','Written items: ',writeCount,end='')
-            print('Trainning written images: ', writeCount)
-            
+            print('Imágenes de entrenamiento guardadas en la carpeta ',folderPathTrain)
+
         userQuit = input("Quieres buscar otra palabra? --> ")
         if userQuit in ['yes','y','YES','Y']:
             continue
         else:
-            print('Shutting down driver')
+            print('Cerrando driver...')
             driver.close()
             break
-
